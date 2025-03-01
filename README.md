@@ -17,7 +17,7 @@ The main changes from the Ralph Xavier firmware are summarised below.
 - Modified the S-Meter size and added labels. 
 - All actions now use a single press of the rotary encoder button, with a 10s timeout. 
 - Added status bar with indicators for SCREEN updates and EEPROM write activity. 
-- Added unit labels for "Step" and "BW.
+- Added unit labels for "Step" and "BW".
 
 ## Functions
 

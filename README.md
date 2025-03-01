@@ -35,5 +35,5 @@ Please see the excellent video by Paul (OM0ET) [Select Link](https://www.youtube
 
 
 ### Information
-The pdf document in zip file contained in the FIRMWARE folder provides additional information.
+The pdf document in the zip file contained in the FIRMWARE folder provides additional information.
 

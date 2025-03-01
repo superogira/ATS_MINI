@@ -1,6 +1,8 @@
 # SI4732 (ESP32) Mini Receiver
 Firmware: **ATS_MINI**
 
+IMPORTANT - [Select Link](https://github.com/G8PTN/ATS_MINI/issues/1#issue-2889033644)
+
 This firmware is for use on the SI4732 (ESP32-S3) Mini/Pocket Receiver.
 Based on the following sources.
 - Ralph Xavier: https://github.com/ralphxavier/SI4735

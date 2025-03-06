@@ -1,7 +1,7 @@
 # SI4732 (ESP32) Mini Receiver
 Firmware: **ATS_MINI**
 
-Latest version: **v1.00**
+Latest version: **v1.01**
 
 IMPORTANT - [Select Link](https://github.com/G8PTN/ATS_MINI/issues/4#issue-2891115063)
 

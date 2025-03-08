@@ -725,6 +725,8 @@ void setup()
   tft.println("To reset EEPROM");
   tft.println("Press+Hold ENC Button");
   tft.println();     
+  tft.println("IP Address : ");
+  tft.println(WiFi.localIP());
   delay(3000);
 
   // EEPROM

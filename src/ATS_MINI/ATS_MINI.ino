@@ -661,23 +661,6 @@ void setup()
   Serial.begin(115200);
   delay(1000);
 
-  WiFi.mode(WIFI_STA); //Optional
-  WiFi.begin(ssid, password);
-  Serial.println("\nConnecting");
-  while(WiFi.status() != WL_CONNECTED){
-    Serial.print(".");
-    delay(500);
-  }
-  Serial.println("\nConnected to the WiFi network");
-  Serial.print("Local ESP32 IP: ");
-  Serial.println(WiFi.localIP());
-  timeClient.update();
-
-  server.on("/", handle_OnConnect);
-  server.onNotFound(handle_NotFound);
-  server.begin();
-  Serial.println("HTTP server started");
-
   // Audio Amplifier Enable. G8PTN: Added
   // Initally disable the audio amplifier until the SI4732 has been setup
   pinMode(PIN_AMP_EN, OUTPUT);
@@ -725,8 +708,27 @@ void setup()
   tft.println("To reset EEPROM");
   tft.println("Press+Hold ENC Button");
   tft.println();     
+  
+  WiFi.mode(WIFI_STA); //Optional
+  WiFi.begin(ssid, password);
+  Serial.println("\nConnecting");
+  while(WiFi.status() != WL_CONNECTED){
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println("\nConnected to the WiFi network");
+  Serial.print("Local ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+  timeClient.update();
+
+  server.on("/", handle_OnConnect);
+  server.onNotFound(handle_NotFound);
+  server.begin();
+  Serial.println("HTTP server started");
+
   tft.println("IP Address : ");
   tft.println(WiFi.localIP());
+  
   delay(3000);
 
   // EEPROM
@@ -3075,8 +3077,8 @@ void loop()
 }
 
 void handle_OnConnect() {
+  String stringTail = " kHz";
   String stringMode;
-
   if (currentMode == AM)
   {
     stringMode = "AM";
@@ -3084,6 +3086,7 @@ void handle_OnConnect() {
   else if (currentMode == FM)
   {
     stringMode = "FM";
+    stringTail = " MHz";
   }
   else if (currentMode == USB)
   {
@@ -3094,14 +3097,21 @@ void handle_OnConnect() {
     stringMode = "LSB";
   }
   
-  String stringBFO;
-  if (currentBFO < 100)
+  uint32_t freq;
+  uint16_t showFreq;
+  uint16_t tail;
+  if (currentMode == FM)
   {
-    stringBFO = ".0";
+    freq = currentFrequency/100.00;
+    showFreq   = int(freq);
+    tail  = (currentFrequency % 100);
   } else {
-    stringBFO = ".";
+    freq  = ((currentFrequency) * 1000) + currentBFO;
+    showFreq   = freq / 1000;
+    tail  =  (freq % 1000);
   }
-  server.send(200, "text/html", SendHTML(currentFrequency,stringBFO,currentBFO,stringMode)); 
+
+  server.send(200, "text/html", SendHTML(showFreq,tail,stringMode,stringTail)); 
 }
 
 void handle_NotFound(){
@@ -3109,11 +3119,11 @@ void handle_NotFound(){
 }
 
 
-String SendHTML(int currentFrequency, String stringBFO, int currentBFO, String stringMode){
+String SendHTML(uint16_t showFreq, uint16_t tail, String stringMode, String stringTail){
   String ptr = "<!DOCTYPE html>";
   ptr +="<html>";
   ptr +="<head>";
-  ptr +="<title>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver</title>";
+  ptr +="<title>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver Station</title>";
   ptr +="<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   ptr +="<meta http-equiv='refresh' content='60'>";
   ptr +="<link href='https://fonts.googleapis.com/css?family=Open+Sans:300,400,600' rel='stylesheet'>";
@@ -3132,7 +3142,7 @@ String SendHTML(int currentFrequency, String stringBFO, int currentBFO, String s
   ptr +="</style>";
   ptr +="</head>";
   ptr +="<body>";
-  ptr +="<h1>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver</h1>";
+  ptr +="<h1>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver Station</h1>";
   ptr +="<div class='container'>";
 
   ptr +="<div class='data frequecy'>";
@@ -3150,11 +3160,11 @@ String SendHTML(int currentFrequency, String stringBFO, int currentBFO, String s
   ptr +="</div>";
   ptr +="<div class='side-by-side text'>Frequency : </div>";
   ptr +="<div class='side-by-side reading'>";
-  ptr +=(int)currentFrequency;
-  ptr +="<span class='superscript'>";
-  ptr +=(String)stringBFO;
-  ptr +=(int)currentBFO;
-  ptr +=" kHz</span></div>";
+  ptr +=(uint16_t)showFreq;
+  ptr +="<span class='superscript'>.";
+  ptr +=(uint16_t)tail;
+  ptr +=(String)stringTail;
+  ptr +="</span></div>";
   ptr +="</div>";
   
   ptr +="</div>";

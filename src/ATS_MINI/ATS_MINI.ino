@@ -651,7 +651,6 @@ SI4735 rx;
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
-
 int hours = 0;
 int minutes = 0;
 
@@ -707,8 +706,8 @@ void setup()
   tft.println();
   tft.println("To reset EEPROM");
   tft.println("Press+Hold ENC Button");
-  tft.println();     
-  
+  tft.println();
+
   WiFi.mode(WIFI_STA); //Optional
   WiFi.begin(ssid, password);
   Serial.println("\nConnecting");
@@ -722,6 +721,9 @@ void setup()
   timeClient.update();
 
   server.on("/", handle_OnConnect);
+  server.on("/data", []() {
+    server.send(200, "text/plain", radio_data().c_str());
+  });
   server.onNotFound(handle_NotFound);
   server.begin();
   Serial.println("HTTP server started");
@@ -3077,7 +3079,16 @@ void loop()
 }
 
 void handle_OnConnect() {
-  String stringTail = " kHz";
+  server.send(200, "text/html", SendHTML()); 
+}
+
+void handle_NotFound(){
+  server.send(404, "text/plain", "Not found");
+}
+
+String radio_data() {
+  String radioData;
+  String stringTail = "\nkHz";
   String stringMode;
   if (currentMode == AM)
   {
@@ -3086,7 +3097,7 @@ void handle_OnConnect() {
   else if (currentMode == FM)
   {
     stringMode = "FM";
-    stringTail = " MHz";
+    stringTail = "\nMHz";
   }
   else if (currentMode == USB)
   {
@@ -3097,35 +3108,48 @@ void handle_OnConnect() {
     stringMode = "LSB";
   }
   
+  radioData[0] = stringMode[0];
+  radioData[3] = stringTail[0];
+  
   uint32_t freq;
   uint16_t showFreq;
   uint16_t tail;
+  String showTail;
   if (currentMode == FM)
   {
     freq = currentFrequency/100.00;
     showFreq   = int(freq);
     tail  = (currentFrequency % 100);
+    if (tail < 10)
+    {
+      showTail = "0" + String(tail);
+    } else {
+      showTail = String(tail);
+    }
   } else {
     freq  = ((currentFrequency) * 1000) + currentBFO;
     showFreq   = freq / 1000;
     tail  =  (freq % 1000);
+    if (tail < 10)
+    {
+      showTail = "00" + String(tail);
+    } else if ((tail >= 10) && (tail < 100)) {
+      showTail = "0" + String(tail);
+    } else {
+      showTail = String(tail);
+    }
   }
 
-  server.send(200, "text/html", SendHTML(showFreq,tail,stringMode,stringTail)); 
+  radioData= stringMode + " " + String(showFreq) + " ." + showTail + stringTail;
+  return String(radioData);
 }
 
-void handle_NotFound(){
-  server.send(404, "text/plain", "Not found");
-}
-
-
-String SendHTML(uint16_t showFreq, uint16_t tail, String stringMode, String stringTail){
+String SendHTML(){
   String ptr = "<!DOCTYPE html>";
   ptr +="<html>";
   ptr +="<head>";
   ptr +="<title>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver Station</title>";
   ptr +="<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-  ptr +="<meta http-equiv='refresh' content='60'>";
   ptr +="<link href='https://fonts.googleapis.com/css?family=Open+Sans:300,400,600' rel='stylesheet'>";
   ptr +="<style>";
   ptr +="html { font-family: 'Open Sans', sans-serif; display: block; margin: 0px auto; text-align: center;color: #444444;}";
@@ -3134,8 +3158,16 @@ String SendHTML(uint16_t showFreq, uint16_t tail, String stringMode, String stri
   ptr +=".side-by-side{display: table-cell;vertical-align: middle;position: relative;}";
   ptr +=".text{font-weight: 600;font-size: 19px;width: 200px;}";
   ptr +=".reading{font-weight: 300;font-size: 50px;padding-right: 25px;}";
+  ptr +=".temperature .reading{color: #F29C1F;}";
+  ptr +=".temperature2 .reading{color: #F29C1F;}";
+  ptr +=".humidity .reading{color: #3B97D3;}";
   ptr +=".frequecy .reading{color: #3B97D3;}";
-  ptr +=".superscript{font-size: 17px;font-weight: 600;position: absolute;top: 10px;}";
+  ptr +=".pressure .reading{color: #26B99A;}";
+  ptr +=".altitude .reading{color: #955BA5;}";
+  ptr +=".pm1_0 .reading{color: #3d3d5c;}";
+  ptr +=".pm2_5 .reading{color: #3d3d5c;}";
+  ptr +=".pm10 .reading{color: #3d3d5c;}";
+  ptr +=".superscript{font-size: 20px;font-weight: 600;position: absolute;top: 10px;}";
   ptr +=".data{padding: 10px;}";
   ptr +=".container{display: table;margin: 0 auto;}";
   ptr +=".icon{width:65px}";
@@ -3150,8 +3182,7 @@ String SendHTML(uint16_t showFreq, uint16_t tail, String stringMode, String stri
   ptr +="<svg xmlns='http://www.w3.org/2000/svg' enable-background='new 0 0 512 512' viewBox='0 0 512 512' id='radio'><g><g><linearGradient id='a' x1='284.966' x2='226.578' y1='-205.851' y2='880.166' gradientUnits='userSpaceOnUse'><stop offset='0' stop-color='#eae9fe'></stop><stop offset='.424' stop-color='#eeeefe'></stop><stop offset='.897' stop-color='#fbfbff'></stop><stop offset='1' stop-color='#fff'></stop></linearGradient><path fill='url(#a)' d='M468.836,264.275c-9.501-7.393-20.976-13.763-25.395-24.961 c-6.01-15.229,3.596-31.571,9.261-46.931c17.297-46.899-4.903-102.439-44.732-132.645 c-75.982-57.623-224.302-37.425-245.028,42.219c-8.768,33.692,6.941,72.131-9.131,103.013 c-20.278,38.966-74.073,41.594-108.719,58.921C2.169,285.358-6.419,332.1,24.365,367.686 c11.304,13.068,25.769,22.07,36.136,36.348c15.001,20.659,23.415,43.504,43.486,60.545c28.263,23.996,75.517,29.946,100.538,2.586 c14.089-15.407,18.674-38.106,34.054-52.225c20.245-18.586,52.242-16.086,78.004-6.514c25.762,9.571,49.654,25.026,76.789,29.381 c42.426,6.81,87.917-18.085,105.053-57.489S502.748,290.664,468.836,264.275z'></path><path fill='#ededed' d='M355.96,97.671L144.802,200.654c-2.397,1.198-4.953,1.757-7.589,1.757 c-1.838,0-3.755-0.319-5.593-0.879c-4.394-1.518-7.829-4.634-9.907-8.789c-1.997-4.154-2.317-8.788-0.799-13.182 c1.518-4.315,4.634-7.83,8.789-9.827l0.879-0.479l216.91-90.359c2.556-1.039,5.353-1.039,7.909,0 c2.477,1.039,4.474,3.036,5.513,5.593C363.071,89.442,360.834,95.275,355.96,97.671z'></path><path fill='#2769fd' d='M442.724,236.526v193.421c0,17.657-14.301,31.957-31.957,31.957H91.194 c-17.657,0-31.957-14.301-31.957-31.957V236.526c0-17.657,14.301-31.957,31.957-31.957h319.573 C428.423,204.568,442.724,218.869,442.724,236.526z'></path><path fill='#ededed' d='M169.39,197.144v7.424h-66.084v-7.424c0-18.248,14.793-33.042,33.042-33.042h0 C154.597,164.102,169.39,178.896,169.39,197.144z'></path><path fill='#e1e7ee' d='M271.243 333.293c0 50.519-40.961 91.593-91.593 91.593-50.519 0-91.593-41.075-91.593-91.593 0-50.633 41.075-91.707 91.593-91.707C230.283 241.586 271.243 282.661 271.243 333.293zM410.765 243.017v46.528c0 4.412-3.577 7.989-7.989 7.989h-90.18c-4.412 0-7.989-3.577-7.989-7.989v-46.528c0-4.412 3.577-7.989 7.989-7.989h90.18C407.188 235.028 410.765 238.605 410.765 243.017z'></path><path fill='#ff5859' d='M355.2,274.754v22.78h-17.786v-22.78c0-4.921,3.972-8.893,8.893-8.893S355.2,269.833,355.2,274.754 z'></path> <ellipse cx='357.686' cy='378.178' fill='#f9bb40' rx='45.256' ry='45.257' transform='rotate(-27.659 357.692 378.186)'></ellipse><path fill='#ededed' d='M331.267,339.16l19.181,19.181c3.494,3.494,3.494,9.104-0.001,12.599 c-3.494,3.494-9.103,3.494-12.598-0.001l-19.181-19.181c-3.494-3.494-3.495-9.103,0-12.598 C322.163,335.666,327.773,335.665,331.267,339.16z'></path><path fill='#ff5859' d='M396.086,84.13c0,21.174-17.13,38.377-38.304,38.377c-21.247,0-38.378-17.204-38.378-38.377 s17.13-38.377,38.378-38.377C378.956,45.753,396.086,62.956,396.086,84.13z'></path><path fill='#332e8e' d='M91.194,466.072h319.572c19.919,0,36.126-16.206,36.126-36.125V236.526 c0-19.92-16.207-36.126-36.126-36.126H173.559v-3.256c0-1.924-0.192-3.8-0.476-5.647l155.978-76.071 c7.577,6.959,17.645,11.248,28.72,11.248c23.419,0,42.473-19.086,42.473-42.545s-19.053-42.545-42.473-42.545 c-23.46,0-42.546,19.086-42.546,42.545c0,1.219,0.082,2.418,0.183,3.612l-174.17,72.555c-1.608-0.213-3.236-0.361-4.901-0.361 c-20.516,0-37.209,16.691-37.209,37.209v3.256h-7.945c-19.919,0-36.126,16.206-36.126,36.126v193.421 C55.068,449.866,71.276,466.072,91.194,466.072z M357.782,49.921c18.823,0,34.137,15.346,34.137,34.209 s-15.314,34.209-34.137,34.209c-18.863,0-34.21-15.346-34.21-34.209S338.918,49.921,357.782,49.921z M316.985,96.12 c1.374,4.667,3.537,8.987,6.32,12.84l-152.442,74.348c-3.315-8.238-9.483-15.018-17.289-19.115L316.985,96.12z M107.475,197.144 c0-15.921,12.954-28.873,28.873-28.873c15.922,0,28.876,12.952,28.876,28.873v3.256h-57.749V197.144z M63.404,236.526 c0-15.324,12.468-27.79,27.79-27.79h12.113h66.084h241.375c15.322,0,27.79,12.467,27.79,27.79v193.421 c0,15.322-12.468,27.789-27.79,27.789H91.194c-15.322,0-27.79-12.467-27.79-27.789V236.526z'></path><path fill='#332e8e' d='M179.651 429.054c52.802 0 95.761-42.958 95.761-95.761 0-52.865-42.958-95.875-95.761-95.875s-95.761 43.01-95.761 95.875C83.89 386.096 126.848 429.054 179.651 429.054zM179.651 245.754c48.206 0 87.425 39.269 87.425 87.539 0 48.206-39.219 87.425-87.425 87.425s-87.425-39.219-87.425-87.425C92.226 285.024 131.445 245.754 179.651 245.754zM312.596 301.702c33.514 0 56.706 0 90.179 0 6.705 0 12.159-5.453 12.159-12.156v-46.529c0-6.703-5.454-12.156-12.159-12.156h-90.179c-6.702 0-12.156 5.453-12.156 12.156v46.529C300.44 296.249 305.894 301.702 312.596 301.702zM341.583 293.366v-18.611c0-2.606 2.119-4.725 4.724-4.725s4.724 2.119 4.724 4.725v18.611H341.583zM308.775 243.016c0-2.107 1.715-3.82 3.82-3.82h11.25v18.674c0 2.302 1.867 4.168 4.168 4.168 2.301 0 4.168-1.865 4.168-4.168v-18.674h21.338v8.527c0 2.302 1.867 4.168 4.168 4.168 2.301 0 4.168-1.865 4.168-4.168v-8.527h21.338V256c0 2.302 1.867 4.168 4.168 4.168 2.301 0 4.168-1.865 4.168-4.168v-16.804h11.247c2.108 0 3.823 1.714 3.823 3.82v46.529c0 2.107-1.715 3.82-3.823 3.82h-43.409v-18.611c0-7.201-5.858-13.061-13.06-13.061s-13.06 5.86-13.06 13.061v18.611h-20.652c-2.106 0-3.82-1.714-3.82-3.82V243.016zM333.147 335.342c-5.129-4.146-12.661-3.895-17.425.871-4.761 4.761-5.017 12.276-.887 17.405-10.812 18.876-8.199 43.403 7.904 59.507 19.297 19.3 50.595 19.301 69.894 0 19.301-19.295 19.301-50.594 0-69.895C376.551 327.146 352.09 324.405 333.147 335.342zM321.615 342.108c1.879-1.881 4.826-1.88 6.705-.001l19.181 19.182c1.85 1.847 1.885 4.819 0 6.703-1.88 1.879-4.824 1.876-6.705 0l-19.181-19.181C319.735 346.931 319.735 343.987 321.615 342.108zM386.739 407.232c-16.042 16.042-42.065 16.042-58.107 0-12.777-12.778-15.261-31.9-7.642-47.258l13.913 13.914c5.099 5.093 13.395 5.099 18.492-.001 5.125-5.125 5.128-13.367 0-18.492l-13.962-13.962c15.47-7.756 34.565-5.051 47.307 7.692C402.784 365.168 402.781 391.19 386.739 407.232z'></path></g></g></svg>";
   ptr +="</div>";
   ptr +="<div class='side-by-side text'>Mode : </div>";
-  ptr +="<div class='side-by-side reading'>";
-  ptr +=(String)stringMode;
+  ptr +="<div class='side-by-side reading' id='showData1'>Please Wait";
   ptr +="<span class='superscript'></span></div>";
   ptr +="</div>";
   
@@ -3159,14 +3190,17 @@ String SendHTML(uint16_t showFreq, uint16_t tail, String stringMode, String stri
   ptr +="<div class='side-by-side icon'>";
   ptr +="</div>";
   ptr +="<div class='side-by-side text'>Frequency : </div>";
-  ptr +="<div class='side-by-side reading'>";
-  ptr +=(uint16_t)showFreq;
-  ptr +="<span class='superscript'>.";
-  ptr +=(uint16_t)tail;
-  ptr +=(String)stringTail;
-  ptr +="</span></div>";
+  ptr +="<div class='side-by-side reading' id='showData2'>Please Wait";
+  ptr +="</div>";
   ptr +="</div>";
   
+  ptr +="<script type=\"text/javascript\" src=\"";
+  ptr +="https://zeptojs.com/zepto.min.js\">";
+  ptr +="</script>";
+  ptr +="<script type=\"text/javascript\">";
+  ptr +="$(function(){setInterval(function(){var getData=$.ajax({url:\"./data\",data:\"rev=1\",async:false,success:function(getData){const data = getData.split(\" \");$(\"div#showData1\").html(data[0]);$(\"div#showData2\").html(data[1]+\"<span class='superscript' id='showData3'></span>\");$(\"span#showData3\").html(data[2]);$(\"div#showData4\").html(data[3]);}}).responseText;},2000);});</script>";
+  ptr +="</script>";
+
   ptr +="</div>";
   ptr +="</body>";
   ptr +="</html>";

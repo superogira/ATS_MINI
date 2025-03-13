@@ -1,3 +1,5 @@
+![Alt text](ats-mini_web.png?raw=true)
+
 # SI4732 (ESP32) Mini Receiver
 Firmware: **ATS_MINI**
 

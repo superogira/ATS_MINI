@@ -753,7 +753,6 @@ void setup()
   });
   server.on("/setfrequency", webSetFreq);
   server.on("/setvolume", webSetVol);
-  server.on("/setmode", webSetMode);
   server.on("/switchband", webSwitchBand);
   server.onNotFound(handle_NotFound);
   server.begin();

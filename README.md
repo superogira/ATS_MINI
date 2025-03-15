@@ -6,7 +6,7 @@
 
 ![Alt text](20250316_021246.jpg?raw=true)
 
-![Alt text](with%20Aviation%20Band%20Converter.mp4?raw=true)
+https://github.com/user-attachments/assets/0ece6161-e04c-4955-868c-0d25709e511b
 
 # SI4732 (ESP32) Mini Receiver
 Firmware: **ATS_MINI**

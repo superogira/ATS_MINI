@@ -151,10 +151,12 @@
 
 //Timezone Offset in seconds
 int utcOffsetInSeconds = 0;
-const char* ssid = "WiFi1_SSID";
-const char* password =  "WiFi1_Password";
-const char* ssid2 = "WiFi2_SSID";
-const char* password2 =  "WiFi2_Password";
+String ssid1 = "-";
+String password1 =  "";
+String ssid2 = "-";
+String password2 =  "";
+String ssid3 = "-";
+String password3 =  "";
 String IPa;
 String IPw;
 
@@ -738,16 +740,35 @@ void setup()
   tft.print("AP Mode IP : ");
   tft.println(IPa);
 
+  int wificheck = 0;
   preferences.begin("configData", false);
-  String wifiSSID = preferences.getString("ssid", "");
-  String wifiPassword = preferences.getString("password", "");
-  preferences.end();
-  if (wifiSSID != ""){
-    WiFi.begin(wifiSSID, wifiPassword);
-    Serial.printf("WiFi connecting to %s ", ssid);
-    int wificheck = 0;
+  if (ssid1 == "-") {
+    ssid1 = preferences.getString("ssid1", "");
+    password1 = preferences.getString("password1", "");
+    if (ssid1 == "") {
+      ssid1 = "-";
+    }
+  }
+  if (ssid2 == "-") {
+    ssid2 = preferences.getString("ssid2", "");
+    password2 = preferences.getString("password2", "");
+    if (ssid2 == "") {
+      ssid2 = "-";
+    }
+  }
+  if (ssid3 == "-") {
+    ssid3 = preferences.getString("ssid3", "");
+    password3 = preferences.getString("password3", "");
+    if (ssid3 == "") {
+      ssid3 = "-";
+    }
+  }
+  
+  if (ssid1 != "-"){
+    WiFi.begin(ssid1, password1);
+    Serial.printf("WiFi connecting to %s ", ssid1);
     tft.print("Connecting WiFi");
-    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 20){
+    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 16){
       Serial.print(".");
       if((wificheck % 4) == 0){
         tft.print(".");
@@ -757,12 +778,12 @@ void setup()
     }
   }
 
-  int wificheck = 0;
-  if(WiFi.status() != WL_CONNECTED){
-    WiFi.begin(ssid, password);
-    Serial.printf("WiFi connecting to %s ", ssid);
-    tft.print("Connecting WiFi");
-    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 20){
+  if (WiFi.status() != WL_CONNECTED && ssid2 != "-"){
+    wificheck = 0;
+    WiFi.begin(ssid2, password2);
+    Serial.printf("WiFi connecting to %s ", ssid2);
+    tft.print(" try2");
+    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 16){
       Serial.print(".");
       if((wificheck % 4) == 0){
         tft.print(".");
@@ -770,22 +791,26 @@ void setup()
       wificheck++;
       delay(500);
     }
-  };
-  if(WiFi.status() != WL_CONNECTED){
-    WiFi.disconnect();
-    WiFi.begin(ssid2, password2);
-    Serial.printf("\nWiFi connecting to %s ", ssid2);
-    tft.print(" try2");
   }
-  while ((WiFi.status() != WL_CONNECTED) && wificheck <= 40){
-    Serial.print(".");
-    if((wificheck % 4) == 0){
-      tft.print(".");
+
+  if (WiFi.status() != WL_CONNECTED && ssid3 != "-"){
+    wificheck = 0;
+    WiFi.begin(ssid3, password3);
+    Serial.printf("WiFi connecting to %s ", ssid3);
+    tft.print(" try3");
+    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 16){
+      Serial.print(".");
+      if((wificheck % 4) == 0){
+        tft.print(".");
+      }
+      wificheck++;
+      delay(500);
     }
-    wificheck++;
-    delay(500);
-  }
-    
+  } 
+  
+  utcOffsetInSeconds = preferences.getString("utcoffset", "").toInt();
+  preferences.end();
+  
   if(WiFi.status() == WL_CONNECTED){
     Serial.println("\nConnected to the WiFi network " + WiFi.SSID());
     tft.println("Connected ");
@@ -793,9 +818,7 @@ void setup()
     Serial.print("Local ESP32 IP:  ");
     Serial.println(IPw);  
     
-    preferences.begin("configData", false);
-    utcOffsetInSeconds = preferences.getString("utcoffset", "").toInt();
-    preferences.end();
+
     if (utcOffsetInSeconds != 0){
       timeClient.setTimeOffset(utcOffsetInSeconds);
       timeClient.update();      
@@ -811,6 +834,7 @@ void setup()
   }
 
   server.on("/", handle_OnConnect);
+  server.on("/connectwifi", webConnectWifi);
   server.on("/radio", webradio);
   server.on("/data", []() {
     server.send(200, "text/plain", radio_data().c_str());
@@ -3052,6 +3076,7 @@ void loop()
     
 
   if(WiFi.status() == WL_CONNECTED){
+    timeClient.setTimeOffset(utcOffsetInSeconds);
     timeClient.update();
     hours = timeClient.getHours();
     minutes = timeClient.getMinutes();
@@ -3245,33 +3270,52 @@ void webSetVol()
 
 void webConfig()
 {
-  String webWifiSSID = server.arg("setWifiSSID");
-  if (webWifiSSID != "") {
-    String webWifiPassword = server.arg("setWifiPassword");
+  String webWifiSSID1 = server.arg("setWifiSSID1");
+  String webWifiPassword1 = server.arg("setWifiPassword1");
+  String webWifiSSID2 = server.arg("setWifiSSID2");
+  String webWifiPassword2 = server.arg("setWifiPassword2");
+  String webWifiSSID3 = server.arg("setWifiSSID3");
+  String webWifiPassword3 = server.arg("setWifiPassword3");
+  if (webWifiSSID1 != "") {
     preferences.begin("configData", false);
-    preferences.putString("ssid", webWifiSSID); 
-    preferences.putString("password", webWifiPassword);
+    preferences.putString("ssid1", webWifiSSID1); 
+    preferences.putString("password1", webWifiPassword1);
     preferences.end();
-    
-    WiFi.disconnect();
-    WiFi.begin(webWifiSSID, webWifiPassword);
-    Serial.printf("WiFi connecting to %s\n", ssid);
-    int wificheck = 0;
-    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 30){
-      Serial.print(".");
-      wificheck++;
-      delay(500);
-    }
-      
-    if(WiFi.status() == WL_CONNECTED){
-      Serial.println("\nConnected to the WiFi network");
-      IPw = WiFi.localIP().toString();
-      Serial.print("WiFi IP: ");
-      Serial.println(IPw);  
-      
-      ajaxInterval = 800;
-    }
+    ssid1 = webWifiSSID1;
   }
+  if (webWifiSSID2 != "") {
+    preferences.begin("configData", false);
+    preferences.putString("ssid2", webWifiSSID2); 
+    preferences.putString("password2", webWifiPassword2);
+    preferences.end();
+    ssid2 = webWifiSSID2;
+  }
+  if (webWifiSSID3 != "") {
+    preferences.begin("configData", false);
+    preferences.putString("ssid3", webWifiSSID3); 
+    preferences.putString("password3", webWifiPassword3);
+    preferences.end();
+    ssid3 = webWifiSSID3;
+  }
+//    WiFi.disconnect();
+//    WiFi.begin(webWifiSSID, webWifiPassword);
+//    Serial.printf("WiFi connecting to %s\n", ssid);
+//    int wificheck = 0;
+//    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 30){
+//      Serial.print(".");
+//      wificheck++;
+//      delay(500);
+//    }
+//      
+//    if(WiFi.status() == WL_CONNECTED){
+//      Serial.println("\nConnected to the WiFi network");
+//      IPw = WiFi.localIP().toString();
+//      Serial.print("WiFi IP: ");
+//      Serial.println(IPw);  
+//      
+//      ajaxInterval = 800;
+//    }
+//  }
 
   String webAviationBandConverter = server.arg("setAviationBandConverter");
   if (webAviationBandConverter != "") {
@@ -3301,6 +3345,31 @@ void webConfig()
     ledcWrite(0, currentBrt);
   }
 
+  server.send(200, "text/html", WebConfig());
+}
+
+void webConnectWifi() {
+  String webWifiSSID = server.arg("setWifiSSID");
+  if (webWifiSSID != "") {
+    String webWifiPassword = server.arg("setWifiPassword");
+    WiFi.disconnect();
+    WiFi.begin(webWifiSSID, webWifiPassword);
+    Serial.printf("WiFi connecting to %s\n", webWifiSSID);
+    int wificheck = 0;
+    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 20){
+      Serial.print(".");
+      wificheck++;
+      delay(500);
+    }
+    if(WiFi.status() == WL_CONNECTED){
+      Serial.println("\nConnected to the WiFi network");
+      IPw = WiFi.localIP().toString();
+      Serial.print("WiFi IP: ");
+      Serial.println(IPw);  
+      
+      ajaxInterval = 800;
+    }
+  }
   server.send(200, "text/html", SendHTML());
 }
 
@@ -3384,11 +3453,30 @@ String WebConfig(){
   ptr +="<h1>ATS-Mini Config</h1>";
   ptr +="<div class='container'>";
   
-  ptr +="<br><div id='setWifi'><form action=\"/config\" method=\"POST\"><label for=\"wifissid\">WiFi SSID : </label><input type=\"text\" name=\"setWifiSSID\" id=\"setwifissid\" value=\"";
+  ptr +="<br><form action=\"/config\" method=\"POST\">";
+  ptr +="<div id='setWifi1'><label for=\"wifissid1\">WiFi SSID 1 : </label><input type=\"text\" name=\"setWifiSSID1\" id=\"setwifissid1\" value=\"";
+  ptr +=ssid1;
+  ptr +="\"><br><label for=\"wifipassword1\">WiFi Password 1 : </label><input type=\"password\" name=\"setWifiPassword1\" id=\"setwifipassword1\"></div><br>";
+  ptr +="<input type='submit' value='Save WiFi Config'></form><br>";
+
+  ptr +="<form action=\"/config\" method=\"POST\">";
+  ptr +="<div id='setWifi2'><label for=\"wifissid2\">WiFi SSID 2 : </label><input type=\"text\" name=\"setWifiSSID2\" id=\"setwifissid2\" value=\"";
+  ptr +=ssid2;
+  ptr +="\"><br><label for=\"wifipassword2\">WiFi Password 2 : </label><input type=\"password\" name=\"setWifiPassword2\" id=\"setwifipassword2\"></div><br>";
+  ptr +="<input type='submit' value='Save WiFi Config'></form><br>";
+
+  ptr +="<form action=\"/config\" method=\"POST\">";
+  ptr +="<div id='setWifi3'><label for=\"wifissid3\">WiFi SSID 3 : </label><input type=\"text\" name=\"setWifiSSID3\" id=\"setwifissid3\" value=\"";
+  ptr +=ssid3;
+  ptr +="\"><br><label for=\"wifipassword3\">WiFi Password 3 : </label><input type=\"password\" name=\"setWifiPassword3\" id=\"setwifipassword3\"></div><br>";
+  ptr +="<input type='submit' value='Save WiFi Config'></form><br><br>";
+
+  ptr +="<br><div id='connectWiFi'><form action=\"/connectwifi\" method=\"POST\"><label for=\"wifissid\">Current WiFi SSID : </label><input type=\"text\" name=\"setWifiSSID\" id=\"setwifissid\" value=\"";
   ptr +=WiFi.SSID();
-  ptr +="\"><br><label for=\"wifipassword\">WiFi Password : </label><input type=\"password\" name=\"setWifiPassword\" id=\"setwifipassword\"><br><br><input type='submit' value='Connect WiFi (Only 2.4GHz)'></form></div><br>";
-  
-  ptr +="<br><div id='setAviationBand'><form action=\"/config\" method=\"POST\"><label for=\"aviationband\">Aviation Band Converter Model : </label><select name=\"setAviationBandConverter\" id=\"models\">";
+  ptr +="\"><br><label for=\"wifipassword\">WiFi Password : </label><input type=\"password\" name=\"setWifiPassword\" id=\"setwifipassword\"><br><br><input type='submit' value='Connect WiFi'></form></div>";
+  ptr +="***Only 2.4GHz***";
+
+  ptr +="<br><br><div id='setAviationBand'><form action=\"/config\" method=\"POST\"><label for=\"aviationband\">Aviation Band Converter Model : </label><select name=\"setAviationBandConverter\" id=\"models\">";
   if (aviationBandConverter == 100) {
     ptr +="<option value=\"0\">Disable</option><option selected value=\"100\">100</option><option value=\"110\">110</option>";
   } else if (aviationBandConverter == 110){

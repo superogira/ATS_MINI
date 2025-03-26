@@ -6,6 +6,8 @@
 
 ![Alt text](ats-mini_web-3.png?raw=true)
 
+![Alt text](ats-mini_web-5.png?raw=true)
+
 ![Alt text](20250316_021246.jpg?raw=true)
 
 https://github.com/user-attachments/assets/0ece6161-e04c-4955-868c-0d25709e511b

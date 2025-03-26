@@ -151,6 +151,7 @@
 
 //Timezone Offset in seconds
 int utcOffsetInSeconds = 0;
+String ChartTimeZone;
 String ssid1 = "-";
 String password1 =  "";
 String ssid2 = "-";
@@ -175,7 +176,8 @@ Preferences preferences;
 
 uint8_t rssiData[60];
 unsigned long period = 1000;
-unsigned long millis_last_time = 0; 
+unsigned long millis_last_time = 0;
+bool fillChart;
 
 // =================================
 // PIN DEFINITIONS
@@ -822,6 +824,7 @@ void setup()
   } 
   
   utcOffsetInSeconds = preferences.getString("utcoffset", "").toInt();
+  ChartTimeZone = preferences.getString("charttimezone", "");
   preferences.end();
   
   if(WiFi.status() == WL_CONNECTED){
@@ -858,6 +861,13 @@ void setup()
   server.on("/rssichart", []() {
     //server.setContentLength(CONTENT_LENGTH_UNKNOWN);
     //server.sendHeader("Content-Length", (String)282870);
+    if (server.arg("fillChart") != "") {
+      if (server.arg("fillChart") == "fill") {
+        fillChart = true;
+      } else if (server.arg("fillChart") == "line") {
+        fillChart = false;
+      }
+    }
     server.send(200, "text/html", webRSSIChart());
   });
   server.on("/setfrequency", webSetFreq);
@@ -3403,6 +3413,14 @@ void webConfig()
     preferences.end();
   }
 
+  String webChartTimeZone = server.arg("setTimeZone");
+  if (webChartTimeZone != "") {
+    ChartTimeZone = webChartTimeZone;
+    preferences.begin("configData", false);
+    preferences.putString("charttimezone", webChartTimeZone);
+    preferences.end();
+  }
+
   String webHours = server.arg("setHours");
   String webMinutes = server.arg("setMinutes");
   if ((webHours != "") && (webMinutes != "")) {
@@ -3566,6 +3584,11 @@ String WebConfig(){
   ptr +="<br><div id='setUTCoffset'><form action=\"/config\" method=\"POST\"><label for=\"utcoffset\">UTC Offset in seconds : </label><input type=\"number\" min='-43200' max='43200' name=\"setUTCoffsetSeconds\" id=\"setutcoffsetseconds\" size=\"4\" value=\"";
   ptr +=utcOffsetInSeconds;
   ptr +="\"> <input type='submit' value='Set UTC Offset'></form></div><br>";
+
+  ptr +="<br><div id='setChartTimeZone'><form action=\"/config\" method=\"POST\"><label for=\"timezone\">Chart Time Zone : </label><input type=\"text\" name=\"setTimeZone\" id=\"settimezone\" size=\"15\" value=\"";
+  ptr +=ChartTimeZone;
+  ptr +="\"> <input type='submit' value='Set Chart Time Zone'></form></div>";
+  ptr +="<p><a href=\"https://en.wikipedia.org/wiki/List_of_tz_database_time_zones\" target=\"_blank\">Time Zone List.</a></p>";
   
   ptr +="<br><div id='setTime'><form action=\"/config\" method=\"POST\"><label for=\"hours\">Hours : </label><input type=\"number\" min='0' max='24' name=\"setHours\" id=\"sethours\" size=\"1\" value=\"";
   if(WiFi.status() == WL_CONNECTED){
@@ -3691,7 +3714,7 @@ String SendHTML(){
       ptr +="</a>";
       ptr +="<br>WiFi not connect";
     }
-  ptr +="<br><br><form action=\"/\" method=\"POST\" class='inline'><input type='submit' value='Config'></form> <form id='bandswitch' method='POST' action='' class='inline'> <input type='hidden' name='setMode' value='SWITCH'><input type='submit' value='Band Switch'></form> <form id='rssichart' method='POST' action='./rssichart' class='inline'> <input type='submit' value='RSSI Chart'></form>";
+  ptr +="<br><br><form action=\"/\" method=\"POST\" class='inline'><input type='submit' value='Config'></form> <form id='bandswitch' method='POST' action='' class='inline'> <input type='hidden' name='setMode' value='SWITCH'><input type='submit' value='Band Switch'></form> <form id='rssichart' method='POST' action='./rssichart' class='inline' target=\"_blank\"> <input type='submit' value='RSSI Chart'></form>";
 
   ptr +="<script type=\"text/javascript\">";
   ptr +="/* gauge.min.js */(function(){var t,i,e,s,n,o,a,h,r,l,c,p,u,d,g=[].slice,m={}.hasOwnProperty,f=function(t,i){for(var e in i)m.call(i,e)&&(t[e]=i[e]);function s(){this.constructor=t}return s.prototype=i.prototype,t.prototype=new s,t.__super__=i.prototype,t},x=[].indexOf||function(t){for(var i=0,e=this.length;i<e;i++)if(i in this&&this[i]===t)return i;return-1};!function(){var t,i,e,s,n,o,a;for(e=0,n=(a=[\"ms\",\"moz\",\"webkit\",\"o\"]).length;e<n&&(o=a[e],!window.requestAnimationFrame);e++)window.requestAnimationFrame=window[o+\"RequestAnimationFrame\"],window.cancelAnimationFrame=window[o+\"CancelAnimationFrame\"]||window[o+\"CancelRequestAnimationFrame\"];t=null,s=0,i={},window.requestAnimationFrame?window.cancelAnimationFrame||(t=window.requestAnimationFrame,window.requestAnimationFrame=function(e,n){var o;return o=++s,t((function(){if(!i[o])return e()}),n),o},window.cancelAnimationFrame=function(t){return i[t]=!0}):";  ptr +="(window.requestAnimationFrame=function(t,i){var e,s,n,o;return e=(new Date).getTime(),o=Math.max(0,16-(e-n)),s=window.setTimeout((function(){return t(e+o)}),o),n=e+o,s},window.cancelAnimationFrame=function(t){return clearTimeout(t)})}(),d=function(t){var i,e;for(t-=3600*(i=Math.floor(t/3600))+60*(e=Math.floor((t-3600*i)/60)),t+=\"\",e+=\"\";e.length<2;)e=\"0\"+e;for(;t.length<2;)t=\"0\"+t;return(i=i?i+\":\":\"\")+e+\":\"+t},p=function(){var t,i,e;return e=(i=1<=arguments.length?g.call(arguments,0):[])[0],t=i[1],l(e.toFixed(t))},";
@@ -3762,10 +3785,21 @@ String webRSSIChart(){
     } else {
       ptr +="<br><br>Please connect to Internet for download Chart.";
   }
-  ptr +="<br><br><form id='radio' method='POST' action='./radio' class='inline'> <input type='submit' value='Radio'></form>";
-  ptr +="</body>";
+  if (fillChart) {
+    ptr +="<br><br><form id='charttype' method='POST' action='./rssichart' class='inline'><input type='hidden' name='fillChart' value='line'> <input type='submit' value='Line Chart'></form>";
+  } else {
+    ptr +="<br><br><form id='charttype' method='POST' action='./rssichart' class='inline'><input type='hidden' name='fillChart' value='fill'> <input type='submit' value='Area Chart'></form>";
+  }
   
-  ptr +="<script type=\"text/javascript\">var chartT = new Highcharts.Chart({chart:{renderTo:'chart-rssi'},series: [{name: 'RSSI',type: 'line',/*color: '#101D42',*/marker: {symbol: 'circle',radius: 3,/*fillColor: '#101D42',*/},showInLegend: true,data: []}],title: {text: 'RSSI'},time: {timezoneOffset: -420},plotOptions: {line: { animation: false,dataLabels: { enabled: true }},series: { color: '#059e8a' }},xAxis: {type: 'datetime',dateTimeLabelFormats: { second: '%H:%M:%S' }},yAxis: {title: {text: 'dBuV'}},credits: {enabled: false}});";
+  //ptr +="<br><br><form id='radio' method='POST' action='./radio' class='inline'> <input type='submit' value='Radio'></form>";
+  ptr +="</body>";
+  ptr +="<script type=\"text/javascript\">var chartT = new Highcharts.Chart({chart:{renderTo:'chart-rssi', type: 'line'},series: [{name: 'RSSI',type: ";
+  if (fillChart) {
+    ptr +="'area'";
+  } else {
+    ptr +="'line'";
+  }
+  ptr +=",/*color: '#101D42',*/marker: {symbol: 'circle',radius: 3,/*fillColor: '#101D42',*/},showInLegend: true,data: []}],title: {text: 'RSSI'},time: {timezone: '"; ptr +=ChartTimeZone; ptr +="'},plotOptions: {line: { animation: false,dataLabels: { enabled: true }},series: { color: '#059e8a',fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1,Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]}},fillOpacity: 0.1 },xAxis: {type: 'datetime',dateTimeLabelFormats: { second: '%H:%M:%S' }},yAxis: {title: {text: 'dBuV'}},credits: {enabled: false}});";
   ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 60) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();}, 1000 ) ;</script>";
   ptr +="</html>";
   return ptr;

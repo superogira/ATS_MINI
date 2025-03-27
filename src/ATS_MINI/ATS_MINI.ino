@@ -179,7 +179,6 @@ uint8_t aviationBandConverter = 0;
 
 Preferences preferences;
 
-uint8_t rssiData[60];
 unsigned long period = 1000;
 unsigned long millis_last_time = 0;
 bool fillChart;
@@ -847,13 +846,13 @@ void setup()
       timeClient.update();      
     }
     
-    ajaxInterval = 800;
+    ajaxInterval = 500;
     
     tft.print("WiFi IP : ");
     tft.print(IPw);
   } else {
     tft.println(" No WiFi connection");
-    ajaxInterval = 3000;
+    ajaxInterval = 1000;
   }
   
   //ptr.reserve (100000);
@@ -3360,7 +3359,7 @@ void webConnectWifi(AsyncWebServerRequest *request) {
         IPw = WiFi.localIP().toString();
         Serial.print("WiFi IP: ");
         Serial.println(IPw);  
-        ajaxInterval = 800;
+        ajaxInterval = 500;
       }
     }
     request->send(200, "text/html", ConfigPage());
@@ -3784,7 +3783,7 @@ String webRSSIChart(){
     ptr +="'line'";
   }
   ptr +=",/*color: '#101D42',*/marker: {symbol: 'circle',radius: 3,/*fillColor: '#101D42',*/},showInLegend: true,data: []}],title: {text: 'RSSI'},time: {timezone: '"; ptr +=ChartTimeZone; ptr +="'},plotOptions: {line: { animation: false,dataLabels: { enabled: true }},series: { color: '#059e8a',fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1,Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]}},fillOpacity: 0.1 },xAxis: {type: 'datetime',dateTimeLabelFormats: { second: '%H:%M:%S' }},yAxis: {title: {text: 'dBuV'}},credits: {enabled: false}});";
-  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 60) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();}, 1000 ) ;</script>";
+  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 120) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();},"; ptr +=ajaxInterval; ptr +=") ;</script>";
   ptr +="</html>";
   return ptr;
 }

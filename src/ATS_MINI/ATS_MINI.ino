@@ -138,7 +138,8 @@
 
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <Wire.h>
 #include <NTPClient.h>
 #include <Preferences.h>
@@ -167,14 +168,15 @@ const int   channel        = 10;    // WiFi Channel number between 1 and 13
 const bool  hide_SSID      = false; // To disable SSID broadcast -> SSID will not appear in a basic WiFi scan
 const int   max_connection = 3;     // Maximum simultaneous connected clients on the AP
 
-WebServer server(80);
-uint16_t ajaxInterval = 1000;
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+uint16_t ajaxInterval = 2000;
 
 uint8_t aviationBandConverter = 0;
 
 Preferences preferences;
 
-uint8_t rssiData[60];
 unsigned long period = 1000;
 unsigned long millis_last_time = 0;
 bool fillChart;
@@ -677,12 +679,15 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 int hours = 0;
 int minutes = 0;
 
+String ptr;
+
+
 void setup()
 {
   // Enable Serial. G8PTN: Added
   Serial.begin(115200);
   delay(1000);
-
+  
   // Audio Amplifier Enable. G8PTN: Added
   // Initally disable the audio amplifier until the SI4732 has been setup
   pinMode(PIN_AMP_EN, OUTPUT);
@@ -782,6 +787,7 @@ void setup()
       wificheck++;
       delay(500);
       if (digitalRead(ENCODER_PUSH_BUTTON) == LOW) {
+        WiFi.disconnect();
         wificheck = 30;
       }
     }
@@ -800,6 +806,7 @@ void setup()
       wificheck++;
       delay(500);
       if (digitalRead(ENCODER_PUSH_BUTTON) == LOW) {
+        WiFi.disconnect();
         wificheck = 30;
       }
     }
@@ -818,6 +825,7 @@ void setup()
       wificheck++;
       delay(500);
       if (digitalRead(ENCODER_PUSH_BUTTON) == LOW) {
+        WiFi.disconnect();
         wificheck = 30;
       }
     }
@@ -846,34 +854,49 @@ void setup()
     tft.print(IPw);
   } else {
     tft.println(" No WiFi connection");
-    ajaxInterval = 3000;
+    ajaxInterval = 2000;
   }
+  
+  server.on("/", HTTP_ANY, [](AsyncWebServerRequest *request){
+    request->send(200, "text/html", ConfigPage());
+  });
+  server.on("/config", HTTP_ANY, webConfig);
+  server.on("/connectwifi", HTTP_ANY, webConnectWifi);
+  server.on("/radio", HTTP_ANY, [](AsyncWebServerRequest *request){
+    RadioPage();
+    Serial.printf("My Big answer has %d characters\n", ptr.length());
+    AsyncWebServerResponse *response = request->beginChunkedResponse("text/html",
+    [](uint8_t *buffer, size_t maxlen, size_t index) -> size_t {
+      size_t len = min(maxlen, ptr.length() - index);
+      Serial.printf("Sending %u bytes\n", len);
+      memcpy(buffer, ptr.c_str() + index, len);
+      return len;
+    });
+    request->send(response);
+  });
+  
+  server.on("/setfrequency", HTTP_ANY, webSetFreq);
+  server.on("/setvolume", HTTP_ANY, webSetVol);
+  server.on("/data", HTTP_ANY, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", radio_data().c_str());
+  });
 
-  server.on("/", handle_OnConnect);
-  server.on("/connectwifi", webConnectWifi);
-  server.on("/radio", webradio);
-  server.on("/data", []() {
-    server.send(200, "text/plain", radio_data().c_str());
+  server.on("/rssi", HTTP_ANY, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", currentRSSI().c_str());
   });
-  server.on("/rssi", []() {
-    server.send(200, "text/plain", currentRSSI().c_str());
-  });
-  server.on("/rssichart", []() {
-    //server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    //server.sendHeader("Content-Length", (String)282870);
-    if (server.arg("fillChart") != "") {
-      if (server.arg("fillChart") == "fill") {
+  server.on("/rssichart", HTTP_ANY, [](AsyncWebServerRequest *request){
+    if (request->hasParam("fillChart", true) && request->getParam("fillChart", true)->value() != "") {
+      if (request->getParam("fillChart", true)->value() == "fill") {
         fillChart = true;
-      } else if (server.arg("fillChart") == "line") {
+      } else if (request->getParam("fillChart", true)->value() == "line") {
         fillChart = false;
       }
     }
-    server.send(200, "text/html", webRSSIChart());
+    request->send(200, "text/html", RSSIChartPage());
   });
-  server.on("/setfrequency", webSetFreq);
-  server.on("/setvolume", webSetVol);
-  server.on("/config", webConfig);
-  server.onNotFound(handle_NotFound);
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
+  });
   server.begin();
   Serial.println("\nHTTP server started\n");
 
@@ -3252,214 +3275,104 @@ void loop()
   }
   
 #endif
-
-  server.handleClient();
   
   // Add a small default delay in the main loop
   delay(5);
 }
 
-void handle_OnConnect() {
-  server.send(200, "text/html", WebConfig()); 
-}
-
-void webradio() {
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "text/html", SendHTML()); 
-}
-
-void handle_NotFound(){
-  server.send(404, "text/plain", "Not found");
-}
-
-void webSetFreq()
-{
-  if (server.arg("setFrequency") != "") {
-    String webSetFrequency = server.arg("setFrequency");
-    if (currentMode == FM && webSetFrequency.toFloat() <= 108) {
-      rx.setFrequency(webSetFrequency.toFloat() * 100);
-    } else if (currentMode == AM && aviationBandConverter != 0){
-      rx.setFrequency(round((webSetFrequency.toFloat() - aviationBandConverter) * 1000));
-    } else {
-      rx.setFrequency(webSetFrequency.toInt());
+void webConfig(AsyncWebServerRequest *request) {
+    if (request->hasParam("setWifiSSID1", true) && request->getParam("setWifiSSID1", true)->value() != "") {
+      String webWifiSSID = request->getParam("setWifiSSID1", true)->value();
+      String webWifiPassword = request->getParam("setWifiPassword1", true)->value();
+      preferences.begin("configData", false);
+      preferences.putString("ssid1", webWifiSSID); 
+      preferences.putString("password1", webWifiPassword);
+      preferences.end();
+      ssid1 = webWifiSSID;
     }
-  }
-  if (server.arg("setBFO") != "") {
-    String webSetBFO = server.arg("setBFO");
-    currentFrequency = rx.getFrequency();
-    currentBFO = (webSetBFO.toInt());
-    updateBFO();
-  }
-  currentFrequency = rx.getFrequency();
-
-  //Serial.println("Setmode");
-  String webSetMode = server.arg("setMode");
-  //Serial.println(webSetMode);
-  Serial.println(server.arg("setMode"));
-  
-  if (webSetMode != "") {
+    if (request->hasParam("setWifiSSID2", true) && request->getParam("setWifiSSID2", true)->value() != "") {
+      String webWifiSSID = request->getParam("setWifiSSID2", true)->value();
+      String webWifiPassword = request->getParam("setWifiPassword2", true)->value();
+      preferences.begin("configData", false);
+      preferences.putString("ssid2", webWifiSSID); 
+      preferences.putString("password2", webWifiPassword);
+      preferences.end();
+      ssid2 = webWifiSSID;
+    }
+    if (request->hasParam("setWifiSSID3", true) && request->getParam("setWifiSSID3", true)->value() != "") {
+      String webWifiSSID = request->getParam("setWifiSSID3", true)->value();
+      String webWifiPassword = request->getParam("setWifiPassword3", true)->value();
+      preferences.begin("configData", false);
+      preferences.putString("ssid3", webWifiSSID); 
+      preferences.putString("password3", webWifiPassword);
+      preferences.end();
+      ssid3 = webWifiSSID;
+    }
+    if (request->hasParam("setAviationBandConverter", true) && request->getParam("setAviationBandConverter", true)->value() != "") {
+      String webAviationBandConverter = request->getParam("setAviationBandConverter", true)->value();
+      aviationBandConverter = webAviationBandConverter.toInt();
+    }
+    if (request->hasParam("setUTCoffsetSeconds", true) && request->getParam("setUTCoffsetSeconds", true)->value() != "") {
+      String webUTCoffset = request->getParam("setUTCoffsetSeconds", true)->value();
+      utcOffsetInSeconds = webUTCoffset.toInt();
+      timeClient.setTimeOffset(utcOffsetInSeconds);
+      timeClient.update();
+      preferences.begin("configData", false);
+      preferences.putString("utcoffset", webUTCoffset);
+      preferences.end();
+    }
+    if (request->hasParam("setTimeZone", true) && request->getParam("setTimeZone", true)->value() != "") {
+      String webChartTimeZone = request->getParam("setTimeZone", true)->value();
+      ChartTimeZone = webChartTimeZone;
+      preferences.begin("configData", false);
+      preferences.putString("charttimezone", webChartTimeZone);
+      preferences.end();
+    }
+    if (request->hasParam("setHours", true) && request->getParam("setHours", true)->value() != "") {
+      String webHours = request->getParam("setHours", true)->value();
+      String webMinutes = request->getParam("setMinutes", true)->value();
+      if ((webHours != "") && (webMinutes != "")) {
+        time_hours = webHours.toInt();
+        time_minutes = webMinutes.toInt();
+      }
+    }
+    if (request->hasParam("setBrightness", true) && request->getParam("setBrightness", true)->value() != "") {
+      String webSetBrightness = request->getParam("setBrightness", true)->value();
+      currentBrt = webSetBrightness.toInt();
+      ledcWrite(0, currentBrt);
+    }
     
-    if (webSetMode == "SWITCH") {
-      if (currentMode == FM) {
-        setBand(-1);
-      } else {
-        webSetMode = "FM";
-      }
-    }
-    Serial.println(webSetMode);
-    //String webSetMode = server.arg("setMode");
-    //Serial.println(webSetMode);
-    if (webSetMode == "USB") {
-      if (currentMode == LSB) {
-        doMode(1);
-      } else {
-        doMode(-1);
-      }
-      currentMode = USB;
-    } else if (webSetMode == "LSB"){
-      if (currentMode == AM) {
-        doMode(1);
-      } else {
-        doMode(-1);
-      }
-      currentMode = LSB;
-    } else if (webSetMode == "AM"){
-      if (currentMode == USB) {
-        doMode(1);
-      } else {
-        doMode(-1);
-      }
-      currentMode = AM;
-    } else if (webSetMode == "FM"){
-      bandIdx = 0;
-      currentMode = FM;
-      band[bandIdx].bandType == FM;
-    }
-    bandMODE[bandIdx] = currentMode;                      // G8PTN: Added to support mode per band
-    useBand();
-  }
-  
-  server.send(200); 
+    request->send(200, "text/html", ConfigPage());
 }
 
-void webSetVol()
-{
-  String webSetVolume= server.arg("setVolume");
-  rx.setVolume(webSetVolume.toInt());
-  server.send(200); 
+void webConnectWifi(AsyncWebServerRequest *request) {
+    if (request->hasParam("setWifiSSID", true) && request->getParam("setWifiSSID", true)->value() != "") {
+      String webWifiSSID = request->getParam("setWifiSSID", true)->value();
+      String webWifiPassword = request->getParam("setWifiPassword", true)->value();
+      Serial.println(webWifiSSID);
+      Serial.println(webWifiPassword);
+      WiFi.disconnect();
+      WiFi.begin(webWifiSSID, webWifiPassword);
+      Serial.printf("WiFi connecting to %s\n", webWifiSSID);
+      int wificheck = 0;
+      while ((WiFi.status() != WL_CONNECTED) && wificheck <= 30){
+        Serial.print(".");
+        wificheck++;
+        delay(500);
+      }
+      if(WiFi.status() == WL_CONNECTED){
+        Serial.println("\nConnected to the WiFi network");
+        IPw = WiFi.localIP().toString();
+        Serial.print("WiFi IP: ");
+        Serial.println(IPw);  
+        ajaxInterval = 800;
+      }
+    }
+    request->send(200, "text/html", ConfigPage());
 }
 
-void webConfig()
-{
-  String webWifiSSID1 = server.arg("setWifiSSID1");
-  String webWifiPassword1 = server.arg("setWifiPassword1");
-  String webWifiSSID2 = server.arg("setWifiSSID2");
-  String webWifiPassword2 = server.arg("setWifiPassword2");
-  String webWifiSSID3 = server.arg("setWifiSSID3");
-  String webWifiPassword3 = server.arg("setWifiPassword3");
-  if (webWifiSSID1 != "") {
-    preferences.begin("configData", false);
-    preferences.putString("ssid1", webWifiSSID1); 
-    preferences.putString("password1", webWifiPassword1);
-    preferences.end();
-    ssid1 = webWifiSSID1;
-  }
-  if (webWifiSSID2 != "") {
-    preferences.begin("configData", false);
-    preferences.putString("ssid2", webWifiSSID2); 
-    preferences.putString("password2", webWifiPassword2);
-    preferences.end();
-    ssid2 = webWifiSSID2;
-  }
-  if (webWifiSSID3 != "") {
-    preferences.begin("configData", false);
-    preferences.putString("ssid3", webWifiSSID3); 
-    preferences.putString("password3", webWifiPassword3);
-    preferences.end();
-    ssid3 = webWifiSSID3;
-  }
-//    WiFi.disconnect();
-//    WiFi.begin(webWifiSSID, webWifiPassword);
-//    Serial.printf("WiFi connecting to %s\n", ssid);
-//    int wificheck = 0;
-//    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 30){
-//      Serial.print(".");
-//      wificheck++;
-//      delay(500);
-//    }
-//      
-//    if(WiFi.status() == WL_CONNECTED){
-//      Serial.println("\nConnected to the WiFi network");
-//      IPw = WiFi.localIP().toString();
-//      Serial.print("WiFi IP: ");
-//      Serial.println(IPw);  
-//      
-//      ajaxInterval = 800;
-//    }
-//  }
-
-  String webAviationBandConverter = server.arg("setAviationBandConverter");
-  if (webAviationBandConverter != "") {
-    aviationBandConverter = webAviationBandConverter.toInt();
-  }
-
-  String webUTCoffset = server.arg("setUTCoffsetSeconds");
-  if (webUTCoffset != "") {
-    utcOffsetInSeconds = webUTCoffset.toInt();
-    timeClient.setTimeOffset(utcOffsetInSeconds);
-    timeClient.update();
-    preferences.begin("configData", false);
-    preferences.putString("utcoffset", webUTCoffset);
-    preferences.end();
-  }
-
-  String webChartTimeZone = server.arg("setTimeZone");
-  if (webChartTimeZone != "") {
-    ChartTimeZone = webChartTimeZone;
-    preferences.begin("configData", false);
-    preferences.putString("charttimezone", webChartTimeZone);
-    preferences.end();
-  }
-
-  String webHours = server.arg("setHours");
-  String webMinutes = server.arg("setMinutes");
-  if ((webHours != "") && (webMinutes != "")) {
-    time_hours = webHours.toInt();
-    time_minutes = webMinutes.toInt();
-  }
-
-  String webSetBrightness = server.arg("setBrightness");
-  if (webSetBrightness != "") {
-    currentBrt = webSetBrightness.toInt();
-    ledcWrite(0, currentBrt);
-  }
-
-  server.send(200, "text/html", WebConfig());
-}
-
-void webConnectWifi() {
-  String webWifiSSID = server.arg("setWifiSSID");
-  if (webWifiSSID != "") {
-    String webWifiPassword = server.arg("setWifiPassword");
-    WiFi.disconnect();
-    WiFi.begin(webWifiSSID, webWifiPassword);
-    Serial.printf("WiFi connecting to %s\n", webWifiSSID);
-    int wificheck = 0;
-    while ((WiFi.status() != WL_CONNECTED) && wificheck <= 30){
-      Serial.print(".");
-      wificheck++;
-      delay(500);
-    }
-    if(WiFi.status() == WL_CONNECTED){
-      Serial.println("\nConnected to the WiFi network");
-      IPw = WiFi.localIP().toString();
-      Serial.print("WiFi IP: ");
-      Serial.println(IPw);  
-      
-      ajaxInterval = 800;
-    }
-  }
-  server.send(200, "text/html", SendHTML());
+void webRadio(AsyncWebServerRequest *respond) {
+  respond->send(200, "text/html", RadioPage());
 }
 
 String radio_data() {
@@ -3525,12 +3438,84 @@ String radio_data() {
   return String(radioData);
 }
 
+void webSetFreq(AsyncWebServerRequest *request) {
+  if (request->hasParam("setFrequency", true) && request->getParam("setFrequency", true)->value() != "") {
+    String webSetFrequency = request->getParam("setFrequency", true)->value();
+    if (currentMode == FM && webSetFrequency.toFloat() <= 108) {
+      rx.setFrequency(webSetFrequency.toFloat() * 100);
+    } else if (currentMode == AM && aviationBandConverter != 0){
+      rx.setFrequency(round((webSetFrequency.toFloat() - aviationBandConverter) * 1000));
+    } else {
+      rx.setFrequency(webSetFrequency.toInt());
+    }
+  }
+  if (request->hasParam("setBFO", true) && request->getParam("setBFO", true)->value() != "") {
+    String webSetBFO = request->getParam("setBFO", true)->value();
+    currentFrequency = rx.getFrequency();
+    currentBFO = (webSetBFO.toInt());
+    updateBFO();
+  }
+  currentFrequency = rx.getFrequency();
+
+  if (request->hasParam("setMode", true) && request->getParam("setMode", true)->value() != "") {
+    String webSetMode = request->getParam("setMode", true)->value();
+    if (webSetMode == "SWITCH") {
+      if (currentMode == FM) {
+        setBand(-1);
+      } else {
+        webSetMode = "FM";
+      }
+    }
+    //Serial.println(webSetMode);
+    //String webSetMode = server.arg("setMode");
+    //Serial.println(webSetMode);
+    if (webSetMode == "USB") {
+      if (currentMode == LSB) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = USB;
+    } else if (webSetMode == "LSB"){
+      if (currentMode == AM) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = LSB;
+    } else if (webSetMode == "AM"){
+      if (currentMode == USB) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = AM;
+    } else if (webSetMode == "FM"){
+      bandIdx = 0;
+      currentMode = FM;
+      band[bandIdx].bandType == FM;
+    }
+    bandMODE[bandIdx] = currentMode;                      // G8PTN: Added to support mode per band
+    useBand();
+  }
+    request->send(200);
+}
+
+void webSetVol(AsyncWebServerRequest *request)
+{
+  if (request->hasParam("setVolume", true) && request->getParam("setVolume", true)->value() != "") {
+    String webSetVolume = request->getParam("setVolume", true)->value();
+    rx.setVolume(webSetVolume.toInt());
+  }
+  request->send(200);
+}
+
 String currentRSSI() {
   rx.getCurrentReceivedSignalQuality();
   return String(rx.getCurrentRSSI());
 }
 
-String WebConfig(){
+String ConfigPage(){
   String ptr = "<!DOCTYPE html>";
   ptr +="<html>";
   ptr +="<head>";
@@ -3622,8 +3607,9 @@ String WebConfig(){
   return ptr;
 }
 
-String SendHTML(){
-  String ptr = "<!DOCTYPE html>";
+
+String RadioPage(){
+  ptr = "<!DOCTYPE html>";
   ptr +="<html>";
   ptr +="<head>";
   ptr +="<title>SI4732 (ESP32-S3) ATS-Mini/Pocket Receiver Station</title>";
@@ -3716,6 +3702,7 @@ String SendHTML(){
     }
   ptr +="<br><br><form action=\"/\" method=\"POST\" class='inline'><input type='submit' value='Config'></form> <form id='bandswitch' method='POST' action='' class='inline'> <input type='hidden' name='setMode' value='SWITCH'><input type='submit' value='Band Switch'></form> <form id='rssichart' method='POST' action='./rssichart' class='inline' target=\"_blank\"> <input type='submit' value='RSSI Chart'></form>";
 
+    //ptr +="<script src=\"https://bernii.github.io/gauge.js/dist/gauge.min.js\"></script>";
   ptr +="<script type=\"text/javascript\">";
   ptr +="/* gauge.min.js */(function(){var t,i,e,s,n,o,a,h,r,l,c,p,u,d,g=[].slice,m={}.hasOwnProperty,f=function(t,i){for(var e in i)m.call(i,e)&&(t[e]=i[e]);function s(){this.constructor=t}return s.prototype=i.prototype,t.prototype=new s,t.__super__=i.prototype,t},x=[].indexOf||function(t){for(var i=0,e=this.length;i<e;i++)if(i in this&&this[i]===t)return i;return-1};!function(){var t,i,e,s,n,o,a;for(e=0,n=(a=[\"ms\",\"moz\",\"webkit\",\"o\"]).length;e<n&&(o=a[e],!window.requestAnimationFrame);e++)window.requestAnimationFrame=window[o+\"RequestAnimationFrame\"],window.cancelAnimationFrame=window[o+\"CancelAnimationFrame\"]||window[o+\"CancelRequestAnimationFrame\"];t=null,s=0,i={},window.requestAnimationFrame?window.cancelAnimationFrame||(t=window.requestAnimationFrame,window.requestAnimationFrame=function(e,n){var o;return o=++s,t((function(){if(!i[o])return e()}),n),o},window.cancelAnimationFrame=function(t){return i[t]=!0}):";  ptr +="(window.requestAnimationFrame=function(t,i){var e,s,n,o;return e=(new Date).getTime(),o=Math.max(0,16-(e-n)),s=window.setTimeout((function(){return t(e+o)}),o),n=e+o,s},window.cancelAnimationFrame=function(t){return clearTimeout(t)})}(),d=function(t){var i,e;for(t-=3600*(i=Math.floor(t/3600))+60*(e=Math.floor((t-3600*i)/60)),t+=\"\",e+=\"\";e.length<2;)e=\"0\"+e;for(;t.length<2;)t=\"0\"+t;return(i=i?i+\":\":\"\")+e+\":\"+t},p=function(){var t,i,e;return e=(i=1<=arguments.length?g.call(arguments,0):[])[0],t=i[1],l(e.toFixed(t))},";
   ptr +="u=function(t,i){var e,s,n;for(e in s={},t)m.call(t,e)&&(n=t[e],s[e]=n);for(e in i)m.call(i,e)&&(n=i[e],s[e]=n);return s},l=function(t){var i,e,s,n;for(s=(e=(t+=\"\").split(\".\"))[0],n=\"\",e.length>1&&(n=\".\"+e[1]),i=/(\\d+)(\\d{3})/;i.test(s);)s=s.replace(i,\"$1,$2\");return s+n},c=function(t){return\"#\"===t.charAt(0)?t.substring(1,7):t},s=function(t){function i(){return i.__super__.constructor.apply(this,arguments)}return f(i,t),i.prototype.displayScale=1,i.prototype.forceUpdate=!0,i.prototype.setTextField=function(t,i){return this.textField=t instanceof h?t:new h(t,i)},i.prototype.setMinValue=function(t,i){var e,s,n,o,a;if(this.minValue=t,null==i&&(i=!0),i){for(this.displayedValue=this.minValue,a=[],s=0,n=(o=this.gp||[]).length;s<n;s++)e=o[s],a.push(e.displayedValue=this.minValue);return a}},i.prototype.setOptions=function(t){return null==t&&(t=null),this.options=u(this.options,t),";  ptr +="this.textField&&(this.textField.el.style.fontSize=t.fontSize+\"px\"),this.options.angle>.5&&(this.options.angle=.5),this.configDisplayScale(),this},i.prototype.configDisplayScale=function(){var t,i,e,s,n;return s=this.displayScale,!1===this.options.highDpiSupport?delete this.displayScale:(i=window.devicePixelRatio||1,t=this.ctx.webkitBackingStorePixelRatio||this.ctx.mozBackingStorePixelRatio||this.ctx.msBackingStorePixelRatio||this.ctx.oBackingStorePixelRatio||this.ctx.backingStorePixelRatio||1,this.displayScale=i/t),this.displayScale!==s&&";
@@ -3731,6 +3718,7 @@ String SendHTML(){
   ptr +=",i.addColorStop(1,this.options.colorStop),this.ctx.strokeStyle=this.options.strokeColor,this.ctx.beginPath(),this.ctx.arc(o,e,this.radius,(1-this.options.angle)*Math.PI,(2+this.options.angle)*Math.PI,!1),this.ctx.lineWidth=this.lineWidth,this.ctx.lineCap=\"round\",this.ctx.stroke(),this.ctx.strokeStyle=i,this.ctx.beginPath(),this.ctx.arc(o,e,this.radius,(1-this.options.angle)*Math.PI,t,!1),this.ctx.stroke()},e}(s),n=function(t){function i(){return i.__super__.constructor.apply(this,arguments)}return f(i,t),i.prototype.strokeGradient=function(t,i,e,s){var n;return(n=this.ctx.createRadialGradient(t,i,e,t,i,s)).addColorStop(0,this.options.shadowColor),n.addColorStop(.12,this.options._orgStrokeColor),n.addColorStop(.88,this.options._orgStrokeColor),n.addColorStop(1,this.options.shadowColor),n},i.prototype.setOptions=function(t){var e,s,n,o;return null==t&&(t=null),i.__super__.setOptions.call(this,t),o=this.canvas.width/2,";  ptr +="e=this.canvas.height/2,s=this.radius-this.lineWidth/2,n=this.radius+this.lineWidth/2,this.options._orgStrokeColor=this.options.strokeColor,this.options.strokeColor=this.strokeGradient(o,e,s,n),this},i}(e),i={elements:[],animId:null,addAll:function(t){var e,s,n,o;for(o=[],s=0,n=t.length;s<n;s++)e=t[s],o.push(i.elements.push(e));return o},add:function(t){if(x.call(i.elements,t)<0)return i.elements.push(t)},run:function(t){var e,s,n,o,a,h,r;if(null==t&&(t=!1),isFinite(parseFloat(t))||!0===t){for(e=!0,r=[],n=s=0,a=(h=i.elements).length;s<a;n=++s)h[n].update(!0===t)?e=!1:r.push(n);";
   ptr +="for(o=r.length-1;o>=0;o+=-1)n=r[o],i.elements.splice(n,1);return i.animId=e?null:requestAnimationFrame(i.run)}if(!1===t)return!0===i.animId&&cancelAnimationFrame(i.animId),i.animId=requestAnimationFrame(i.run)}},\"function\"==typeof window.define&&null!=window.define.amd?define((function(){return{Gauge:o,Donut:n,BaseDonut:e,TextRenderer:h,AnimationUpdater:i}})):\"undefined\"!=typeof module&&null!=module.exports?module.exports={Gauge:o,Donut:n,BaseDonut:e,TextRenderer:h,AnimationUpdater:i}:(window.Gauge=o,window.Donut=n,window.BaseDonut=e,window.TextRenderer=h,window.AnimationUpdater=i)}).call(this);";
   ptr +="</script>";
+  //ptr +="<script src=\"https://zeptojs.com/zepto.min.js\"></script>";
   ptr +="<script type=\"text/javascript\">";
   ptr +="/* Zepto v1.2.0 - zepto event ajax form ie - zeptojs.com/license */!function(t,e){'function'==typeof define&&define.amd?define(function(){return e(t)}):e(t)}(this,function(t){var e=function(){function $(t){return null==t?String(t):S[C.call(t)]||'object'}function F(t){return'function'==$(t)}function k(t){return null!=t&&t==t.window}function M(t){return null!=t&&t.nodeType==t.DOCUMENT_NODE}function R(t){return'object'==$(t)}function Z(t){return R(t)&&!k(t)&&Object.getPrototypeOf(t)==Object.prototype}function z(t){var e=!!t&&'length'in t&&t.length,n=r.type(t);return'function'!=n&&!k(t)&&('array'==n||0===e||'number'==typeof e&&e>0&&e-1 in t)}function q(t){return a.call(t,function(t){return null!=t})}function H(t){return t.length>0?r.fn.concat.apply([],t):t}function I(t){return t.replace(/::/g,'/').replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2').replace(/([a-z\\d])([A-Z])/g,'$1_$2').replace(/_/g,'-').toLowerCase()}function V(t)";  ptr +="{return t in l?l[t]:l[t]=new RegExp('(^|\\\\s)'+t+'(\\\\s|$)')}function _(t,e){return'number'!=typeof e||h[I(t)]?e:e+'px'}function B(t){var e,n;return c[t]||(e=f.createElement(t),f.body.appendChild(e),n=getComputedStyle(e,'').getPropertyValue('display'),e.parentNode.removeChild(e),'none'==n&&(n='block'),c[t]=n),c[t]}function U(t){return'children'in t?u.call(t.children):r.map(t.childNodes,function(t){return 1==t.nodeType?t:void 0})}";
   ptr +="function X(t,e){var n,r=t?t.length:0;for(n=0;r>n;n++)this[n]=t[n];this.length=r,this.selector=e||''}function J(t,r,i){for(n in r)i&&(Z(r[n])||L(r[n]))?(Z(r[n])&&!Z(t[n])&&(t[n]={}),L(r[n])&&!L(t[n])&&(t[n]=[]),J(t[n],r[n],i)):r[n]!==e&&(t[n]=r[n])}function W(t,e){return null==e?r(t):r(t).filter(e)}function Y(t,e,n,r){return F(e)?e.call(t,n,r):e}function G(t,e,n){null==n?t.removeAttribute(e):t.setAttribute(e,n)}function K(t,n){var r=t.className||'',i=r&&r.baseVal!==e;return n===e?i?r.baseVal:r:void(i?r.baseVal=n:t.className=n)}function Q(t){try{return t?'true'==t||('false'==t?!1:'null'==t?null:+t+''==t?+t:/^[\\[\\{]/.test(t)?r.parseJSON(t):t):t}catch(e){return t}}function tt(t,e){e(t);for(var n=0,r=t.childNodes.length;r>n;n++)tt(t.childNodes[n],e)}var e,n,r,i,O,P,o=[],s=o.concat,a=o.filter,u=o.slice,f=t.document,c={},l={},h={'column-count':1,columns:1,'font-weight':1,'line-height':1,opacity:1,'z-index':1,zoom:1},";  ptr +="p=/^\\s*<(\\w+|!)[^>]*>/,d=/^<(\\w+)\\s*\\/?>(?:<\\/\\1>|)$/,m=/<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\\w:]+)[^>]*)\\/>/gi,g=/^(?:body|html)$/i,v=/([A-Z])/g,y=['val','css','html','text','data','width','height','offset'],x=['after','prepend','before','append'],b=f.createElement('table'),E=f.createElement('tr'),j={tr:f.createElement('tbody'),tbody:b,thead:b,tfoot:b,td:E,th:E,'*':f.createElement('div')},w=/complete|loaded|interactive/";
@@ -3775,8 +3763,8 @@ String SendHTML(){
   return ptr;
 }
 
-String webRSSIChart(){
-  String ptr = "<!DOCTYPE html>";
+String RSSIChartPage(){
+  ptr = "<!DOCTYPE html>";
   ptr +="<html><head><title>ATS-Mini - RSSI Chart</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
   ptr +="<style>html {font-family: Arial, Helvetica, sans-serif;display: inline-block;text-align: center;}h1 {font-size: 1.7rem;color: white;}p {font-size: 1.3rem;}.topnav {overflow: hidden;background-color: #0A1128;}body {margin: 0;}.content {padding: 0.5%;}.card-grid {/* max-width: 1200px; */margin: 0 auto;display: grid;grid-gap: 2rem;grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));}.card {background-color: white;box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);}.card-title {font-size: 1.1rem;font-weight: bold;color: #034078}.chart-container {padding-right: 0.1%;padding-left: 0.1%;}</style>";
   ptr +="</head><body><div class=\"topnav\"><h1>ATS-Mini - RSSI Chart</h1></div><div class=\"content\"><div class=\"card-grid\"><div class=\"card\"><p class=\"card-title\">RSSI LIVE Chart</p><div id=\"chart-rssi\" class=\"chart-container\"></div></div></div></div>";
@@ -3800,7 +3788,7 @@ String webRSSIChart(){
     ptr +="'line'";
   }
   ptr +=",/*color: '#101D42',*/marker: {symbol: 'circle',radius: 3,/*fillColor: '#101D42',*/},showInLegend: true,data: []}],title: {text: 'RSSI'},time: {timezone: '"; ptr +=ChartTimeZone; ptr +="'},plotOptions: {line: { animation: false,dataLabels: { enabled: true }},series: { color: '#059e8a',fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1,Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]}},fillOpacity: 0.1 },xAxis: {type: 'datetime',dateTimeLabelFormats: { second: '%H:%M:%S' }},yAxis: {title: {text: 'dBuV'}},credits: {enabled: false}});";
-  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 60) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();}, 1000 ) ;</script>";
+  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 120) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();},"; ptr +=ajaxInterval; ptr +=") ;</script>";
   ptr +="</html>";
   return ptr;
 }

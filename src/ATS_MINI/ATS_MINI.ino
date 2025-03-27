@@ -860,10 +860,15 @@ void setup()
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/html", ConfigPage());
   });
+  server.on("/", HTTP_POST, [](AsyncWebServerRequest *request){
+    request->send(200, "text/html", ConfigPage());
+  });
   server.on("/config", HTTP_POST, webConfig);
   server.on("/connectwifi", HTTP_POST, webConnectWifi);
   server.on("/radio", HTTP_GET, webRadio);
   server.on("/radio", HTTP_POST, webRadio);
+  server.on("/setfrequency", HTTP_POST, webSetFreq);
+  server.on("/setvolume", HTTP_POST, webSetVol);
   server.on("/data", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", radio_data().c_str());
   });
@@ -3427,6 +3432,78 @@ String radio_data() {
   }
   radioData= stringMode + " " + String(showFreq) + " ." + showTail + stringTail + " " + String(getStrength()) + " " + String(rx.getVolume()) + " " + String(aviationBandConverter);
   return String(radioData);
+}
+
+void webSetFreq(AsyncWebServerRequest *request) {
+  if (request->hasParam("setFrequency", true) && request->getParam("setFrequency", true)->value() != "") {
+    String webSetFrequency = request->getParam("setFrequency", true)->value();
+    if (currentMode == FM && webSetFrequency.toFloat() <= 108) {
+      rx.setFrequency(webSetFrequency.toFloat() * 100);
+    } else if (currentMode == AM && aviationBandConverter != 0){
+      rx.setFrequency(round((webSetFrequency.toFloat() - aviationBandConverter) * 1000));
+    } else {
+      rx.setFrequency(webSetFrequency.toInt());
+    }
+  }
+  if (request->hasParam("setBFO", true) && request->getParam("setBFO", true)->value() != "") {
+    String webSetBFO = request->getParam("setBFO", true)->value();
+    currentFrequency = rx.getFrequency();
+    currentBFO = (webSetBFO.toInt());
+    updateBFO();
+  }
+  currentFrequency = rx.getFrequency();
+
+  if (request->hasParam("setMode", true) && request->getParam("setMode", true)->value() != "") {
+    String webSetMode = request->getParam("setMode", true)->value();
+    if (webSetMode == "SWITCH") {
+      if (currentMode == FM) {
+        setBand(-1);
+      } else {
+        webSetMode = "FM";
+      }
+    }
+    //Serial.println(webSetMode);
+    //String webSetMode = server.arg("setMode");
+    //Serial.println(webSetMode);
+    if (webSetMode == "USB") {
+      if (currentMode == LSB) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = USB;
+    } else if (webSetMode == "LSB"){
+      if (currentMode == AM) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = LSB;
+    } else if (webSetMode == "AM"){
+      if (currentMode == USB) {
+        doMode(1);
+      } else {
+        doMode(-1);
+      }
+      currentMode = AM;
+    } else if (webSetMode == "FM"){
+      bandIdx = 0;
+      currentMode = FM;
+      band[bandIdx].bandType == FM;
+    }
+    bandMODE[bandIdx] = currentMode;                      // G8PTN: Added to support mode per band
+    useBand();
+  }
+    request->send(200);
+}
+
+void webSetVol(AsyncWebServerRequest *request)
+{
+  if (request->hasParam("setVolume", true) && request->getParam("setVolume", true)->value() != "") {
+    String webSetVolume = request->getParam("setVolume", true)->value();
+    rx.setVolume(webSetVolume.toInt());
+  }
+  request->send(200);
 }
 
 String currentRSSI() {

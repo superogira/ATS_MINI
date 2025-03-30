@@ -3375,6 +3375,8 @@ void webRadio(AsyncWebServerRequest *respond) {
   respond->send(200, "text/html", RadioPage());
 }
 
+String bandWidthString;
+
 String radio_data() {
   String radioData;
   String stringTail = "\nkHz";
@@ -3434,7 +3436,21 @@ String radio_data() {
       }
     }
   }
-  radioData= stringMode + " " + String(showFreq) + " ." + showTail + stringTail + " " + String(getStrength()) + " " + String(rx.getVolume()) + " " + String(aviationBandConverter);
+
+  if (isSSB())
+  {
+    bandWidthString = bandwidthSSB[bwIdxSSB].desc;
+  }
+  else if (currentMode == AM)
+  {
+    bandWidthString = bandwidthAM[bwIdxAM].desc;
+  }
+  else
+  {
+    bandWidthString = bandwidthFM[bwIdxFM].desc;
+  }
+  
+  radioData= stringMode + " " + String(showFreq) + " ." + showTail + stringTail + " " + String(getStrength()) + " " + String(rx.getVolume()) + " " + String(aviationBandConverter) + " " + String(bandWidthString);
   return String(radioData);
 }
 
@@ -3449,6 +3465,12 @@ void webSetFreq(AsyncWebServerRequest *request) {
       rx.setFrequency(webSetFrequency.toInt());
       currentBFO = 0;
       updateBFO();
+    }
+  }
+  if (request->hasParam("changeBandwidth", true) && request->getParam("changeBandwidth", true)->value() != "") {
+    String webChangeBandwidth = request->getParam("changeBandwidth", true)->value();
+    if (webChangeBandwidth == "changeBandwidth") {
+      doBandwidth(1);
     }
   }
   if (request->hasParam("setBFO", true) && request->getParam("setBFO", true)->value() != "") {
@@ -3677,6 +3699,7 @@ String RadioPage(){
 
   ptr +="<br><FORM id='setfrequency' METHOD='POST' action=''><div id='setFreq'></form></div>";
   ptr +="<FORM id='setbfo' METHOD='POST' action=''><div id='setBFO'></form></div>";
+  ptr +="<div id='changeBandwidth'><form id='changebandwidth' method='POST' action=''><label for='Bandwidth'>Current Bandwidth : </label><b><label id='currentbandwidth'></label></b> <input type='hidden' name='changeBandwidth' value='changeBandwidth'><input type='submit' value='Change Bandwidth'></form></div><br>";
   ptr +="<FORM id='setmode' METHOD='POST' action=''><div id='setMode'></form></div>";
   ptr +="<div id='setVolume'><FORM id='setvolume' METHOD='POST' action=''><label for='Volume'>0 - 63 : </label><input type='number' min='0' max='63' name='setVolume'> <input type='submit' value='Set Volume'></form></div><br>";
 
@@ -3743,7 +3766,7 @@ String RadioPage(){
   ptr +="return this[0]&&t.each(this[0].elements,function(r,o){n=o.type,e=o.name,e&&'fieldset'!=o.nodeName.toLowerCase()&&!o.disabled&&'submit'!=n&&'reset'!=n&&'button'!=n&&'file'!=n&&('radio'!=n&&'checkbox'!=n||o.checked)&&i(t(o).val())}),r},t.fn.serialize=function(){var t=[];return this.serializeArray().forEach(function(e){t.push(encodeURIComponent(e.name)+'='+encodeURIComponent(e.value))}),t.join('&')},t.fn.submit=function(e){if(0 in arguments)this.bind('submit',e);else if(this.length){var n=t.Event('submit');this.eq(0).trigger(n),n.isDefaultPrevented()||this.get(0).submit()}return this}}(e),function(){try{getComputedStyle(void 0)}catch(e){var n=getComputedStyle;t.getComputedStyle=function(t,e){try{return n(t,e)}catch(r){return null}}}}(),e});";
   ptr +="</script>";
   ptr +="<script type=\"text/javascript\">";
-  ptr +="var smeterGuage = 0; var webCurrentMode = \"\"; $(function(){setInterval(function(){var getData=$.ajax({url:\"./data\",async:true,success:function(getData){const data = getData.split(\" \");$(\"div#Mode\").html(data[0]);$(\"div#Frequency\").html(data[1]+\"<span class='superscript' id='Tail'></span>\");$(\"span#Tail\").html(data[2]);$(\"div#Volume\").html(data[4]);smeterGuage = data[3];if (data[0] == \"FM\" && webCurrentMode != \"FM\") {webCurrentMode = \"FM\"; $(\"div#setFreq\").html(\"<label for='frequency'>64.00 - 108.00 : </label><input type='number' min='64' max='108' step='.01' name='setFrequency'> <input type='submit' value='Set Frequency'></form><br><br>\");$(\"div#setBFO\").html('');$(\"div#setMode\").html('');";
+  ptr +="var smeterGuage = 0; var webCurrentMode = \"\"; $(function(){setInterval(function(){var getData=$.ajax({url:\"./data\",async:true,success:function(getData){const data = getData.split(\" \");$(\"div#Mode\").html(data[0]);$(\"div#Frequency\").html(data[1]+\"<span class='superscript' id='Tail'></span>\");$(\"span#Tail\").html(data[2]);$(\"div#Volume\").html(data[4]);$(\"label#currentbandwidth\").html(data[6]);smeterGuage = data[3];if (data[0] == \"FM\" && webCurrentMode != \"FM\") {webCurrentMode = \"FM\"; $(\"div#setFreq\").html(\"<label for='frequency'>64.00 - 108.00 : </label><input type='number' min='64' max='108' step='.01' name='setFrequency'> <input type='submit' value='Set Frequency'></form><br><br>\");$(\"div#setBFO\").html('');$(\"div#setMode\").html('');";
   ptr +="} else if (((data[0] == \"USB\" || data[0] == \"LSB\") && webCurrentMode != \"OTHER\") || (data[0] == \"AM\" && data[5] == 0 && webCurrentMode != \"OTHER\")) {webCurrentMode = \"OTHER\";$(\"div#setFreq\").html(\"<label for='frequency'>150 - 30000 : </label><input type='number' min='150' max='30000' name='setFrequency'> <input type='submit' value='Set Frequency'></form><br><br>\");$(\"div#setBFO\").html(\"<label for='bfo'>0 - 999 : </label><input type='number' min='0' max='999' name='setBFO'> <input type='submit' value='Set BFO'></form><br><br>\");$(\"div#setMode\").html(\"<label for='mode'>Mode : </label><select name='setMode' id='modes'><option value=''></option><option value='USB'>USB</option><option value='LSB'>LSB</option><option value='AM'>AM</option></select> <input type='submit' value='Set Mode'></form><br><br>\");";
   ptr +="} else if (data[0] == \"AM\" && data[5] != 0 && webCurrentMode != \"AIR\") {webCurrentMode = \"AIR\";$(\"div#setFreq\").html(\"<label for='frequency'>108.000 - 138.000 : </label><input type='number' min='108' max='138' step='.001' name='setFrequency'> <input type='submit' value='Set Frequency'></form><br><br>\");} else {}}}).responseText;},";
   ptr +=ajaxInterval;
@@ -3754,6 +3777,7 @@ String RadioPage(){
   ptr +=");";
   ptr +="</script>";
   ptr +="<script type=\"text/javascript\">$(function(){$(\"#setfrequency\").on(\"submit\",function(event){event.preventDefault();var dataSend = $(this).serialize();$.post(\"setfrequency\",dataSend,function(response){$(\"#setfrequency\")[0].reset();});});});</script>";
+  ptr +="<script type=\"text/javascript\">$(function(){$(\"#changebandwidth\").on(\"submit\",function(event){event.preventDefault();var dataSend = $(this).serialize();$.post(\"setfrequency\",dataSend,function(response){});});});</script>";
   ptr +="<script type=\"text/javascript\">$(function(){$(\"#setbfo\").on(\"submit\",function(event){event.preventDefault();var dataSend = $(this).serialize();$.post(\"setfrequency\",dataSend,function(response){$(\"#setbfo\")[0].reset();});});});</script>";
   ptr +="<script type=\"text/javascript\">$(function(){$(\"#setmode\").on(\"submit\",function(event){event.preventDefault();var dataSend = $(this).serialize();$.post(\"setfrequency\",dataSend,function(response){$(\"#setmode\")[0].reset();});});});</script>";
   ptr +="<script type=\"text/javascript\">$(function(){$(\"#bandswitch\").on(\"submit\",function(event){event.preventDefault();var dataSend = $(this).serialize();$.post(\"setfrequency\",dataSend,function(response){});});});</script>";

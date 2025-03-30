@@ -171,7 +171,7 @@ const int   max_connection = 3;     // Maximum simultaneous connected clients on
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
-uint16_t ajaxInterval = 2000;
+uint16_t ajaxInterval = 2500;
 
 uint8_t aviationBandConverter = 0;
 
@@ -848,13 +848,13 @@ void setup()
       timeClient.update();      
     }
     
-    ajaxInterval = 800;
+    ajaxInterval = 1000;
     
     tft.print("WiFi IP : ");
     tft.print(IPw);
   } else {
     tft.println(" No WiFi connection");
-    ajaxInterval = 2000;
+    ajaxInterval = 2500;
   }
   
   server.on("/", HTTP_ANY, [](AsyncWebServerRequest *request){
@@ -3365,7 +3365,7 @@ void webConnectWifi(AsyncWebServerRequest *request) {
         IPw = WiFi.localIP().toString();
         Serial.print("WiFi IP: ");
         Serial.println(IPw);  
-        ajaxInterval = 800;
+        ajaxInterval = 1000;
       }
     }
     request->send(200, "text/html", ConfigPage());
@@ -3447,6 +3447,8 @@ void webSetFreq(AsyncWebServerRequest *request) {
       rx.setFrequency(round((webSetFrequency.toFloat() - aviationBandConverter) * 1000));
     } else {
       rx.setFrequency(webSetFrequency.toInt());
+      currentBFO = 0;
+      updateBFO();
     }
   }
   if (request->hasParam("setBFO", true) && request->getParam("setBFO", true)->value() != "") {

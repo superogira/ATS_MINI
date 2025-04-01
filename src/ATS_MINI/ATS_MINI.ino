@@ -884,7 +884,10 @@ void setup()
   server.on("/rssi", HTTP_ANY, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", currentRSSI().c_str());
   });
-  server.on("/rssichart", HTTP_ANY, [](AsyncWebServerRequest *request){
+  server.on("/snr", HTTP_ANY, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", currentSNR().c_str());
+  });
+  server.on("/chart", HTTP_ANY, [](AsyncWebServerRequest *request){
     if (request->hasParam("fillChart", true) && request->getParam("fillChart", true)->value() != "") {
       if (request->getParam("fillChart", true)->value() == "fill") {
         fillChart = true;
@@ -892,7 +895,7 @@ void setup()
         fillChart = false;
       }
     }
-    request->send(200, "text/html", RSSIChartPage());
+    request->send(200, "text/html", ChartPage());
   });
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");
@@ -3539,6 +3542,11 @@ String currentRSSI() {
   return String(rx.getCurrentRSSI());
 }
 
+String currentSNR() {
+  rx.getCurrentReceivedSignalQuality();
+  return String(rx.getCurrentSNR());
+}
+
 String ConfigPage(){
   String ptr = "<!DOCTYPE html>";
   ptr +="<html>";
@@ -3725,7 +3733,7 @@ String RadioPage(){
       ptr +="</a>";
       ptr +="<br>WiFi not connect";
     }
-  ptr +="<br><br><form action=\"/\" method=\"POST\" class='inline'><input type='submit' value='Config'></form> <form id='bandswitch' method='POST' action='' class='inline'> <input type='hidden' name='setMode' value='SWITCH'><input type='submit' value='Band Switch'></form> <form id='rssichart' method='POST' action='./rssichart' class='inline' target=\"_blank\"> <input type='submit' value='RSSI Chart'></form>";
+  ptr +="<br><br><form action=\"/\" method=\"POST\" class='inline'><input type='submit' value='Config'></form> <form id='bandswitch' method='POST' action='' class='inline'> <input type='hidden' name='setMode' value='SWITCH'><input type='submit' value='Band Switch'></form> <form id='chart' method='POST' action='./chart' class='inline' target=\"_blank\"> <input type='submit' value='RSSI / SNR Chart'></form>";
 
     //ptr +="<script src=\"https://bernii.github.io/gauge.js/dist/gauge.min.js\"></script>";
   ptr +="<script type=\"text/javascript\">";
@@ -3789,32 +3797,50 @@ String RadioPage(){
   return ptr;
 }
 
-String RSSIChartPage(){
+String ChartPage(){
   ptr = "<!DOCTYPE html>";
-  ptr +="<html><head><title>ATS-Mini - RSSI Chart</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+  ptr +="<html><head><title>ATS-Mini - RSSI / SNR Chart</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
   ptr +="<style>html {font-family: Arial, Helvetica, sans-serif;display: inline-block;text-align: center;}h1 {font-size: 1.7rem;color: white;}p {font-size: 1.3rem;}.topnav {overflow: hidden;background-color: #0A1128;}body {margin: 0;}.content {padding: 0.5%;}.card-grid {/* max-width: 1200px; */margin: 0 auto;display: grid;grid-gap: 2rem;grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));}.card {background-color: white;box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);}.card-title {font-size: 1.1rem;font-weight: bold;color: #034078}.chart-container {padding-right: 0.1%;padding-left: 0.1%;}</style>";
-  ptr +="</head><body><div class=\"topnav\"><h1>ATS-Mini - RSSI Chart</h1></div><div class=\"content\"><div class=\"card-grid\"><div class=\"card\"><p class=\"card-title\">RSSI LIVE Chart</p><div id=\"chart-rssi\" class=\"chart-container\"></div></div></div></div>";
+  ptr +="</head><body><div class=\"topnav\"><h1>ATS-Mini - RSSI / SNR Chart</h1></div><div class=\"content\"><div class=\"card-grid\"><div class=\"card\"><p class=\"card-title\">RSSI / SNR LIVE Chart</p><div id=\"chart-rssi\" class=\"chart-container\"></div></div></div></div>";
   if(WiFi.status() == WL_CONNECTED){
       ptr +="<script src=\"https://code.highcharts.com/highcharts.js\"></script>";
     } else {
       ptr +="<br><br>Please connect to Internet for download Chart.";
   }
   if (fillChart) {
-    ptr +="<br><br><form id='charttype' method='POST' action='./rssichart' class='inline'><input type='hidden' name='fillChart' value='line'> <input type='submit' value='Line Chart'></form>";
+    ptr +="<br><br><form id='charttype' method='POST' action='./chart' class='inline'><input type='hidden' name='fillChart' value='line'> <input type='submit' value='Line Chart'></form>";
   } else {
-    ptr +="<br><br><form id='charttype' method='POST' action='./rssichart' class='inline'><input type='hidden' name='fillChart' value='fill'> <input type='submit' value='Area Chart'></form>";
+    ptr +="<br><br><form id='charttype' method='POST' action='./chart' class='inline'><input type='hidden' name='fillChart' value='fill'> <input type='submit' value='Area Chart'></form>";
   }
   
   //ptr +="<br><br><form id='radio' method='POST' action='./radio' class='inline'> <input type='submit' value='Radio'></form>";
+  
   ptr +="</body>";
-  ptr +="<script type=\"text/javascript\">var chartT = new Highcharts.Chart({chart:{renderTo:'chart-rssi', type: 'line'},series: [{name: 'RSSI',type: ";
+  ptr +="<script type=\"text/javascript\">";
+  ptr +="var chartT = new Highcharts.Chart({chart: {renderTo: 'chart-rssi',type: 'line'},series: [{name: 'RSSI',type: ";
   if (fillChart) {
     ptr +="'area'";
   } else {
     ptr +="'line'";
   }
-  ptr +=",/*color: '#101D42',*/marker: {symbol: 'circle',radius: 3,/*fillColor: '#101D42',*/},showInLegend: true,data: []}],title: {text: 'RSSI'},time: {timezone: '"; ptr +=ChartTimeZone; ptr +="'},plotOptions: {line: { animation: false,dataLabels: { enabled: true }},series: { color: '#059e8a',fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1,Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]}},fillOpacity: 0.1 },xAxis: {type: 'datetime',dateTimeLabelFormats: { second: '%H:%M:%S' }},yAxis: {title: {text: 'dBuV'}},credits: {enabled: false}});";
-  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 120) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();},"; ptr +=ajaxInterval; ptr +=") ;</script>";
+  ptr +=",color: '#059e8a',";
+  ptr +="/*fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1, Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]},*/";
+  ptr +="fillOpacity: 0.6,marker: {symbol: 'circle',radius: 3,fillColor: '#059e8a',},showInLegend: true,data: []},{name: 'SNR',type: ";
+  if (fillChart) {
+    ptr +="'area'";
+  } else {
+    ptr +="'line'";
+  }  
+  ptr +=",color: '#FF0000',fillOpacity: 0.6,";
+  ptr +="marker: {symbol: 'triangle',radius: 3,fillColor: '#FF0000',},showInLegend: true,data: []}],title: {text: 'RSSI / SNR'},";
+  ptr +="time: {timezone: 'Asia/Bangkok'},plotOptions: {line: {animation: false,dataLabels: {enabled: true}}";
+  ptr +="/*series: {color: '#059e8a',fillColor: {color: '#059e8a',linearGradient: [25, 0, 0, 250],stops: [[0, '#059e8a'],[1, Highcharts.color('#059e8a').setOpacity(0).get('rgba')]]}},fillOpacity: 0.1*/";
+  ptr+="},xAxis: {type: 'datetime',dateTimeLabelFormats: {second: '%H:%M:%S'}},yAxis: {title: {text: 'SNR (dB) / RSSI (dBuV)'}},credits: {enabled: false}});";
+  
+  ptr +="setInterval(function ( ) {var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[0].data.length > 120) {chartT.series[0].addPoint([x, y], true, true, true);} else {chartT.series[0].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/rssi\", true);xhttp.send();";
+  ptr +="var xhttp = new XMLHttpRequest();xhttp.onreadystatechange = function() {if (this.readyState == 4 && this.status == 200) {var x = (new Date()).getTime(),y = parseFloat(this.responseText);/* console.log(this.responseText); */if(chartT.series[1].data.length > 120) {chartT.series[1].addPoint([x, y], true, true, true);} else {chartT.series[1].addPoint([x, y], true, false, true);}}};xhttp.open(\"GET\", \"/snr\", true);xhttp.send();},";
+  ptr +=ajaxInterval;
+  ptr +=") ;</script>";
   ptr +="</html>";
   return ptr;
 }

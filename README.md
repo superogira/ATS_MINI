@@ -1,4 +1,4 @@
-Another Version >>> [Link](https://github.com/superogira/ats-mini)
+New Version >>> [Link](https://github.com/superogira/ats-mini)
 ================================================================================
 
 ![Alt text](ats-mini_web.png?raw=true)
